@@ -3,7 +3,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
-data = pd.read_csv("../../COMP4989/AppliancesCsv.csv", low_memory=False)
+data = pd.read_csv("AppliancesCsv.csv", low_memory=False)
 
 nona = data.dropna(axis=0, how="any")
 
