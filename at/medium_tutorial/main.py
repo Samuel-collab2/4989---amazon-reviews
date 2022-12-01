@@ -11,6 +11,8 @@ from tensorflow import keras
 from keras.utils import to_categorical
 import matplotlib.pyplot as plt
 import string
+import pickle
+from sklearn.model_selection import train_test_split
 
 
 def wordCloud_generator(data, title=None):
@@ -59,7 +61,7 @@ def cleanData(reviews):
     return df_cleaned['clean_reviews']
 
 
-def train_test_split(cleaned_data, labels, y_ohe, train_ratio=0.75):
+def train_test_split_custom(cleaned_data, labels, y_ohe, train_ratio=0.75):
     """
     Splits the inputted cleaned data features and labels into train and test datasets
     :param cleaned_data: a Pandas DataFrame, data features
@@ -67,6 +69,7 @@ def train_test_split(cleaned_data, labels, y_ohe, train_ratio=0.75):
     :param train_ratio: training-to-test ratio, 75% by default
     :return: 4 Pandas DataFrames
     """
+    y_ohe = pd.DataFrame(y_ohe)
     num_rows = cleaned_data.shape[0]
 
     shuffled_indices = list(range(num_rows))
@@ -79,10 +82,10 @@ def train_test_split(cleaned_data, labels, y_ohe, train_ratio=0.75):
     test_indices = shuffled_indices[train_set_size:num_rows]
 
     train_features = cleaned_data.iloc[train_indices]
-    train_labels = labels.iloc[train_indices]
+    train_labels = y_ohe.iloc[train_indices]
 
     test_features = cleaned_data.iloc[test_indices]
-    test_labels = labels.iloc[test_indices]
+    test_labels = y_ohe.iloc[test_indices]
 
     return train_features, train_labels, test_features, test_labels
 
@@ -94,8 +97,8 @@ if __name__ == '__main__':
     """
 
     data = pd.read_csv('/Users/at/Downloads/tripadvisor_hotel_reviews.csv')
-    X = data['Review'].copy()
-    y = data['Rating'].copy()
+    # X = data['Review'].copy()
+    # y = data['Rating'].copy()
 
 
     """Pre-processing"""
@@ -107,8 +110,10 @@ if __name__ == '__main__':
     # X_cleaned.head()
     # # X_cleaned.to_csv("./cleaned_data.csv")  # saves cleaned data to CSV so don't have to clean everytime
 
+    sample_size = 1000
+
     X_cleaned = pd.read_csv("./cleaned_data.csv")
-    X_cleaned = X_cleaned.iloc[:, 1]
+    X_cleaned = X_cleaned.iloc[:5000, 1]
 
     """
     Encode Target Variable Rating
@@ -121,15 +126,20 @@ if __name__ == '__main__':
                 }
     labels = ['1', '2', '3', '4', '5']
 
-    y_ohe = data['Rating'].copy()
-    y_ohe.replace(encoding, inplace=True)
-    y_ohe = to_categorical(y_ohe, 5)
+    # y_ohe = data['Rating'].copy()
+    # y_ohe.replace(encoding, inplace=True)
+    # y_ohe = to_categorical(y_ohe, 5)
+
+    y = data['Rating'].copy()
+    y = y.iloc[:5000]
+    y.replace(encoding, inplace=True)
+    y = to_categorical(y, 5)
 
     """
     Split into 80% for train, 10% for CV, 10% for testing
     """
-    X_train, y_train, X_test, y_test = train_test_split(X_cleaned, y, y_ohe)
-
+    # X_train, y_train, X_test, y_test = train_test_split_custom(X_cleaned, y, y_ohe)
+    X_train, X_test, y_train, y_test = train_test_split(X_cleaned, y, stratify=y, random_state=42, test_size=0.1)
     """
     Sequentializing Data
     """
@@ -171,19 +181,53 @@ if __name__ == '__main__':
     model.add(Dropout(0.2))
     model.add(Dense(16, activation='relu'))
     model.add(Dense(num_classes, activation='softmax'))
-    # model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-    model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    # model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     callbacks = [EarlyStopping(monitor='val_loss', patience=5),
-                 ModelCheckpoint('../model/model.h5', save_best_only=True,
+                 ModelCheckpoint('../model/model_CP.h5', save_best_only=True,
                                  save_weights_only=False)]
     model.summary()
 
     """
     Fitting Model & Starting Training
     """
-    history = model.fit(X_train, y_train, validation_split=0.11,
-                        epochs=15, batch_size=32, verbose=1,
-                        callbacks=callbacks)
+    model_filepath = "../model/nn_med_model_5k_notSparse.sav"
+    # model = pickle.load(open(model_filepath, 'rb'))
+
+    # y_train = np.asarray(y_train)
+    # y_train = y_train.flatten()
+    # history = model.fit(X_train, y_train, validation_split=0.11,
+    #                     epochs=15, batch_size=32, verbose=1,
+    #                     callbacks=callbacks)
+
+    # model.fit(X_train, y_train, validation_split=0.11,
+    #           epochs=15, batch_size=32, verbose=1,
+    #           callbacks=callbacks)
+
+    # saves the model
+    # pickle.dump(model, open(model_filepath, "wb"))
+
+    # loads the model
+    model = pickle.load(open(model_filepath, 'rb'))
+
+    """
+    Getting predictions using the model
+    """
+    # X_test = pd.DataFrame(X_test)
+    X_test_token = tokenizer.texts_to_sequences(X_test)
+    X_test_token = pad_sequences(X_test_token, max_length, padding='post')
+    pred = model.predict(X_test_token)
+    pred = to_categorical(pred, 5)
+
+    # count = 0
+    # for line in pred:
+    #     print(f"{count}: {line}")
+    print(f"Pred: {pred}")
+
+    from sklearn.metrics import classification_report, accuracy_score
+    y_test = np.argmax(y_test, axis=1)
+    print('Test Accuracy: {}'.format(accuracy_score(pred, y_test)))
+    print(classification_report(y_test, pred, target_names=labels))
 
     pass
 """
